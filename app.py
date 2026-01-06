@@ -1122,18 +1122,54 @@ def show_settings():
         vendors = get_all_vendors()
         pending = [u for u in users if u['status'] == 'pending']
         
+        # Add User Form
+        with st.expander("➕ Add User"):
+            with st.form("add_user"):
+                col1, col2 = st.columns(2)
+                with col1:
+                    new_name = st.text_input("Full Name *")
+                    new_email = st.text_input("Email *")
+                    new_password = st.text_input("Password *", type="password")
+                with col2:
+                    new_role = st.selectbox("Role *", ["supplier", "admin"], 
+                        format_func=lambda x: "🔑 Administrator" if x == "admin" else "📦 Supplier")
+                    new_vendor = st.selectbox("Vendor (for suppliers)", 
+                        options=[""] + [v['id'] for v in vendors],
+                        format_func=lambda x: "Select vendor..." if x == "" else next((v['name'] for v in vendors if v['id'] == x), x))
+                    new_status = st.selectbox("Status", ["approved", "pending"],
+                        format_func=lambda x: "✅ Approved" if x == "approved" else "⏳ Pending")
+                
+                if st.form_submit_button("Create User", use_container_width=True):
+                    if not all([new_name, new_email, new_password]):
+                        st.error("Please fill in name, email, and password")
+                    elif new_role == "supplier" and not new_vendor:
+                        st.error("Please select a vendor for supplier accounts")
+                    elif get_user_by_email(new_email):
+                        st.error("A user with this email already exists")
+                    elif len(new_password) < 6:
+                        st.error("Password must be at least 6 characters")
+                    else:
+                        new_user = create_user(new_email, new_password, new_name, new_role, 
+                            new_vendor if new_role == "supplier" else None)
+                        if new_status == "approved":
+                            update_user(new_user['id'], status='approved')
+                        st.success(f"User '{new_name}' created successfully!")
+                        st.rerun()
+        
+        # Pending Approvals
         if pending:
-            st.markdown("### Pending Approvals")
+            st.markdown("### ⏳ Pending Approvals")
             for p in pending:
                 col1, col2, col3 = st.columns([3, 1, 1])
                 with col1:
                     st.markdown(f"**{p['name']}** ({p['email']})")
+                    st.caption(f"Vendor: {p.get('vendor_name', 'N/A')}")
                 with col2:
-                    if st.button("✅", key=f"approve_{p['id']}"):
+                    if st.button("✅ Approve", key=f"approve_{p['id']}"):
                         update_user(p['id'], status='approved')
                         st.rerun()
                 with col3:
-                    if st.button("❌", key=f"reject_{p['id']}"):
+                    if st.button("❌ Reject", key=f"reject_{p['id']}"):
                         update_user(p['id'], status='rejected')
                         st.rerun()
             st.markdown("---")
@@ -1144,7 +1180,9 @@ def show_settings():
             with col1:
                 st.markdown(f"**{u['name']}** ({u['email']})")
             with col2:
-                st.caption(f"{'Admin' if u['role'] == 'admin' else u.get('vendor_name', 'Supplier')} - {u['status']}")
+                role_label = '🔑 Admin' if u['role'] == 'admin' else f"📦 {u.get('vendor_name', 'Supplier')}"
+                status_icon = {'approved': '✅', 'pending': '⏳', 'rejected': '❌'}.get(u['status'], '⚪')
+                st.caption(f"{role_label} - {status_icon} {u['status']}")
             with col3:
                 if u['id'] != user['id'] and st.button("🗑️", key=f"del_user_{u['id']}"):
                     delete_user(u['id'])
