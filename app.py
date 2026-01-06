@@ -349,6 +349,14 @@ def show_sidebar():
 
 def main():
     """Main application entry point"""
+    import importlib
+    import sys
+    from pathlib import Path
+    
+    # Ensure pages directory is in path
+    pages_dir = Path(__file__).parent / "pages"
+    if str(pages_dir.parent) not in sys.path:
+        sys.path.insert(0, str(pages_dir.parent))
     
     # Initialize page state
     if 'page' not in st.session_state:
@@ -362,27 +370,25 @@ def main():
         # Route to appropriate page
         page = st.session_state.page
         
-        if page == "dashboard":
-            from pages import dashboard
-            dashboard.show()
-        elif page == "scars":
-            from pages import scars
-            scars.show()
-        elif page == "scar_detail":
-            from pages import scar_detail
-            scar_detail.show()
-        elif page == "scar_create":
-            from pages import scar_create
-            scar_create.show()
-        elif page == "settings":
-            from pages import settings
-            settings.show()
-        elif page == "profile":
-            from pages import profile
-            profile.show()
-        else:
-            from pages import dashboard
-            dashboard.show()
+        # Dynamic page loading
+        page_mapping = {
+            "dashboard": "pages.dashboard",
+            "scars": "pages.scars",
+            "scar_detail": "pages.scar_detail",
+            "scar_create": "pages.scar_create",
+            "settings": "pages.settings",
+            "profile": "pages.profile",
+        }
+        
+        module_name = page_mapping.get(page, "pages.dashboard")
+        try:
+            page_module = importlib.import_module(module_name)
+            page_module.show()
+        except Exception as e:
+            st.error(f"Error loading page: {e}")
+            # Fallback to dashboard
+            dashboard_module = importlib.import_module("pages.dashboard")
+            dashboard_module.show()
 
 if __name__ == "__main__":
     main()
