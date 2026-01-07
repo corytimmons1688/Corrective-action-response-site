@@ -89,17 +89,26 @@ def get_calyx_styles():
             background: linear-gradient(180deg, var(--calyx-primary) 0%, var(--calyx-ocean-blue) 100%);
         }}
         
-        [data-testid="stSidebar"] .stMarkdown {{
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {{
             color: var(--calyx-white);
         }}
         
-        [data-testid="stSidebar"] h1,
-        [data-testid="stSidebar"] h2,
-        [data-testid="stSidebar"] h3,
-        [data-testid="stSidebar"] p,
-        [data-testid="stSidebar"] span,
-        [data-testid="stSidebar"] label {{
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h2,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h4,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] span,
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] strong {{
             color: var(--calyx-white) !important;
+        }}
+        
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] {{
+            color: rgba(255,255,255,0.8) !important;
+        }}
+        
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {{
+            color: rgba(255,255,255,0.8) !important;
         }}
         
         [data-testid="stSidebar"] hr {{
@@ -109,7 +118,7 @@ def get_calyx_styles():
         /* Button styling */
         .stButton > button {{
             background-color: var(--calyx-primary);
-            color: var(--calyx-white);
+            color: var(--calyx-white) !important;
             border: none;
             border-radius: 4px;
             padding: 0.5rem 1.5rem;
@@ -121,7 +130,33 @@ def get_calyx_styles():
         
         .stButton > button:hover {{
             background-color: var(--calyx-primary-light);
-            color: var(--calyx-white);
+            color: var(--calyx-white) !important;
+        }}
+        
+        /* Sidebar button styling - ensure text is visible */
+        [data-testid="stSidebar"] .stButton > button {{
+            background-color: var(--calyx-white);
+            color: var(--calyx-primary) !important;
+            border: 1px solid rgba(255,255,255,0.3);
+            text-align: left;
+        }}
+        
+        [data-testid="stSidebar"] .stButton > button:hover {{
+            background-color: var(--calyx-powder-blue);
+            color: var(--calyx-primary) !important;
+            border-color: var(--calyx-white);
+        }}
+        
+        [data-testid="stSidebar"] .stButton > button span,
+        [data-testid="stSidebar"] .stButton > button p,
+        [data-testid="stSidebar"] .stButton > button div {{
+            color: var(--calyx-primary) !important;
+        }}
+        
+        [data-testid="stSidebar"] .stButton button[data-testid="baseButton-secondary"],
+        [data-testid="stSidebar"] .stButton button[kind="secondary"] {{
+            background-color: var(--calyx-white);
+            color: var(--calyx-primary) !important;
         }}
         
         /* Secondary button */
@@ -578,26 +613,9 @@ def require_admin():
 # LOGO COMPONENT
 # ============================================================================
 
-def render_logo():
-    logo_svg = '''
-    <svg viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg">
-        <g fill="none" stroke="currentColor" stroke-width="2">
-            <rect x="12" y="12" width="36" height="36" transform="rotate(45 30 30)" rx="2"/>
-            <rect x="18" y="18" width="24" height="24" transform="rotate(45 30 30)" rx="1"/>
-        </g>
-    </svg>
-    '''
-    return f'''
-    <div class="calyx-logo">
-        <div class="calyx-logo-mark" style="color: white;">
-            {logo_svg}
-        </div>
-        <div>
-            <div class="calyx-logo-text">CALYX</div>
-            <div class="calyx-logo-subtitle">CONTAINERS</div>
-        </div>
-    </div>
-    '''
+def render_logo_text():
+    """Simple text-based logo for sidebar"""
+    return "CALYX CONTAINERS"
 
 # ============================================================================
 # GRID TABLE COMPONENT
@@ -646,47 +664,53 @@ def get_role_badge(role):
 
 def render_sidebar():
     with st.sidebar:
-        st.markdown(render_logo(), unsafe_allow_html=True)
-        st.markdown("---")
+        # Logo using Streamlit native markdown
+        st.markdown("## ◇ CALYX")
+        st.caption("CONTAINERS")
+        
+        st.divider()
         
         if check_login():
             user = st.session_state.user
             st.markdown(f"**User:** {user['username']}")
             st.markdown(f"**Role:** {user['role'].title()}")
-            if user['vendor_name']:
+            if user.get('vendor_name'):
                 st.markdown(f"**Vendor:** {user['vendor_name']}")
             
-            st.markdown("---")
+            st.divider()
             
             # Navigation
             st.markdown("### Navigation")
             
             if user['role'] == 'admin':
-                pages = {
-                    "Dashboard": "dashboard",
-                    "SCARs": "scars",
-                    "Vendors": "vendors",
-                    "Users": "users",
-                }
+                if st.button("📊 Dashboard", key="nav_dashboard", use_container_width=True):
+                    st.session_state.page = "dashboard"
+                    st.rerun()
+                if st.button("📋 SCARs", key="nav_scars", use_container_width=True):
+                    st.session_state.page = "scars"
+                    st.rerun()
+                if st.button("🏢 Vendors", key="nav_vendors", use_container_width=True):
+                    st.session_state.page = "vendors"
+                    st.rerun()
+                if st.button("👥 Users", key="nav_users", use_container_width=True):
+                    st.session_state.page = "users"
+                    st.rerun()
             else:
-                pages = {
-                    "Dashboard": "dashboard",
-                    "My SCARs": "scars",
-                }
-            
-            for label, page in pages.items():
-                if st.button(label, key=f"nav_{page}", use_container_width=True):
-                    st.session_state.page = page
+                if st.button("📊 Dashboard", key="nav_dashboard", use_container_width=True):
+                    st.session_state.page = "dashboard"
+                    st.rerun()
+                if st.button("📋 My SCARs", key="nav_scars", use_container_width=True):
+                    st.session_state.page = "scars"
                     st.rerun()
             
-            st.markdown("---")
+            st.divider()
             
-            if st.button("Logout", use_container_width=True):
+            if st.button("🚪 Logout", key="nav_logout", use_container_width=True):
                 st.session_state.user = None
                 st.session_state.page = "login"
                 st.rerun()
         else:
-            st.markdown("### SCAR Management System")
+            st.markdown("### SCAR Management")
             st.markdown("Please log in to continue.")
 
 # ============================================================================
@@ -700,12 +724,7 @@ def login_page():
     col1, col2, col3 = st.columns([1, 2, 1])
     
     with col2:
-        st.markdown("""
-        <div class="calyx-card">
-            <div class="calyx-card-header">
-                <h3 class="calyx-card-title">Sign In</h3>
-            </div>
-        """, unsafe_allow_html=True)
+        st.subheader("Sign In")
         
         with st.form("login_form"):
             username = st.text_input("Username")
@@ -727,18 +746,10 @@ def login_page():
                 else:
                     st.warning("Please enter username and password")
         
-        st.markdown("</div>", unsafe_allow_html=True)
-        
         # Demo credentials info
-        st.markdown("""
-        <div class="form-section" style="margin-top: 1rem;">
-            <div class="form-section-title">Demo Credentials</div>
-            <p style="font-size: 0.875rem; color: #666; margin: 0;">
-                <strong>Admin:</strong> admin / admin123<br>
-                <strong>Supplier:</strong> supplier / supplier123
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.divider()
+        st.caption("Demo Credentials")
+        st.info("**Admin:** admin / admin123\n\n**Supplier:** supplier / supplier123")
 
 # ============================================================================
 # DASHBOARD PAGE
@@ -788,37 +799,17 @@ def dashboard_page():
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.markdown(f"""
-        <div class="calyx-stat">
-            <div class="calyx-stat-value">{total_scars}</div>
-            <div class="calyx-stat-label">Total SCARs</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("Total SCARs", total_scars)
     
     with col2:
-        st.markdown(f"""
-        <div class="calyx-stat">
-            <div class="calyx-stat-value">{open_scars}</div>
-            <div class="calyx-stat-label">Open SCARs</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("Open SCARs", open_scars)
     
     with col3:
-        st.markdown(f"""
-        <div class="calyx-stat">
-            <div class="calyx-stat-value">{closed_scars}</div>
-            <div class="calyx-stat-label">Closed SCARs</div>
-        </div>
-        """, unsafe_allow_html=True)
+        st.metric("Closed SCARs", closed_scars)
     
     if user['role'] == 'admin':
         with col4:
-            st.markdown(f"""
-            <div class="calyx-stat">
-                <div class="calyx-stat-value">{active_vendors}</div>
-                <div class="calyx-stat-label">Active Vendors</div>
-            </div>
-            """, unsafe_allow_html=True)
+            st.metric("Active Vendors", active_vendors)
     
     st.markdown("<br>", unsafe_allow_html=True)
     
@@ -1032,21 +1023,13 @@ def scar_detail_view(scar_number):
     is_admin = user['role'] == 'admin'
     
     # SCAR Header
-    st.markdown(f"""
-    <div class="calyx-card">
-        <div style="display: flex; justify-content: space-between; align-items: center;">
-            <div>
-                <h3 style="margin: 0; color: {CALYX_COLORS['primary']};">{scar['scar_number']}</h3>
-                <p style="margin: 0.25rem 0 0 0; color: {CALYX_COLORS['gray_60']};">
-                    {scar['vendor_code']} - {scar['vendor_name']}
-                </p>
-            </div>
-            <div>
-                {get_status_badge(scar['status'])}
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        st.subheader(scar['scar_number'])
+        st.caption(f"{scar['vendor_code']} - {scar['vendor_name']}")
+    with col2:
+        status_color = "🟢" if scar['status'] == 'Closed' else "🟡" if scar['status'] == 'In Progress' else "🔵"
+        st.markdown(f"**Status:** {status_color} {scar['status']}")
     
     # Tabs for different sections
     tabs = st.tabs([
