@@ -1,14 +1,47 @@
 """
 SCAR Management System for Calyx Containers
-Brand-aligned version with grid-based layouts
+Supabase-backed version with grid-based layouts
 """
 
 import streamlit as st
-import sqlite3
-import hashlib
-from datetime import datetime
-import json
+from datetime import datetime, timedelta
 import os
+
+# Import database functions (Supabase-backed)
+from database import (
+    init_database,
+    get_password_hash,
+    verify_password,
+    get_user_by_email,
+    get_user_by_id,
+    get_all_users,
+    create_user,
+    update_user,
+    update_user_password,
+    delete_user,
+    get_pending_users_count,
+    get_all_vendors,
+    get_vendor_by_id,
+    create_vendor,
+    update_vendor,
+    delete_vendor,
+    get_vendor_contacts,
+    create_vendor_contact,
+    delete_vendor_contact,
+    get_all_scars,
+    get_scar_by_id,
+    create_scar,
+    update_scar,
+    submit_scar,
+    verify_scar,
+    get_scar_activity,
+    get_scar_stats,
+    get_next_scar_number,
+    upload_attachment,
+    get_scar_attachments,
+    get_attachment_download_url,
+    delete_attachment,
+)
 
 # ============================================================================
 # CALYX BRAND CONFIGURATION
@@ -133,7 +166,7 @@ def get_calyx_styles():
             color: var(--calyx-white) !important;
         }}
         
-        /* Sidebar button styling - ensure text is visible */
+        /* Sidebar button styling */
         [data-testid="stSidebar"] .stButton > button {{
             background-color: var(--calyx-white);
             color: var(--calyx-primary) !important;
@@ -250,6 +283,11 @@ def get_calyx_styles():
             color: var(--calyx-ocean-blue);
         }}
         
+        .status-submitted {{
+            background: #E8DAEF;
+            color: #6C3483;
+        }}
+        
         /* Role badges */
         .role-admin {{
             background: var(--calyx-primary);
@@ -261,7 +299,7 @@ def get_calyx_styles():
             color: var(--calyx-white);
         }}
         
-        /* Card styling - more angular, less bubbly */
+        /* Card styling */
         .calyx-card {{
             background: var(--calyx-white);
             border: 1px solid var(--calyx-gray-10);
@@ -323,11 +361,6 @@ def get_calyx_styles():
             gap: 12px;
             padding: 1rem 0;
             margin-bottom: 1rem;
-        }}
-        
-        .calyx-logo-mark {{
-            width: 40px;
-            height: 40px;
         }}
         
         .calyx-logo-text {{
@@ -423,175 +456,15 @@ def get_calyx_styles():
     """
 
 # ============================================================================
-# DATABASE SETUP
-# ============================================================================
-
-DB_PATH = "scar_system.db"
-
-def get_db():
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
-    return conn
-
-def init_db():
-    conn = get_db()
-    c = conn.cursor()
-    
-    # Users table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password_hash TEXT NOT NULL,
-            role TEXT NOT NULL DEFAULT 'supplier',
-            vendor_id INTEGER,
-            status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (vendor_id) REFERENCES vendors(id)
-        )
-    ''')
-    
-    # Vendors table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS vendors (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            name TEXT NOT NULL,
-            code TEXT UNIQUE NOT NULL,
-            contact_name TEXT,
-            contact_email TEXT,
-            contact_phone TEXT,
-            address TEXT,
-            status TEXT DEFAULT 'active',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        )
-    ''')
-    
-    # SCARs table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS scars (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scar_number TEXT UNIQUE NOT NULL,
-            vendor_id INTEGER NOT NULL,
-            status TEXT DEFAULT 'Open',
-            priority TEXT DEFAULT 'Medium',
-            created_by INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            due_date DATE,
-            
-            -- Section 1: SCAR Details
-            product_name TEXT,
-            part_number TEXT,
-            lot_number TEXT,
-            quantity_affected INTEGER,
-            
-            -- Section 2: Non-Conformity Description
-            nc_description TEXT,
-            nc_category TEXT,
-            detection_method TEXT,
-            
-            -- Section 3: Containment Actions
-            containment_actions TEXT,
-            containment_date DATE,
-            containment_responsible TEXT,
-            
-            -- Section 4: Root Cause Analysis
-            root_cause TEXT,
-            rca_method TEXT,
-            rca_completed_date DATE,
-            
-            -- Section 5: Corrective Action
-            corrective_action TEXT,
-            ca_responsible TEXT,
-            ca_target_date DATE,
-            ca_completion_date DATE,
-            
-            -- Section 6: Preventive Action
-            preventive_action TEXT,
-            pa_responsible TEXT,
-            pa_target_date DATE,
-            
-            -- Section 7: Verification
-            verification_method TEXT,
-            verification_result TEXT,
-            verification_date DATE,
-            verified_by TEXT,
-            
-            closed_at TIMESTAMP,
-            FOREIGN KEY (vendor_id) REFERENCES vendors(id),
-            FOREIGN KEY (created_by) REFERENCES users(id)
-        )
-    ''')
-    
-    # Activity log table
-    c.execute('''
-        CREATE TABLE IF NOT EXISTS activity_log (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            scar_id INTEGER,
-            user_id INTEGER,
-            action TEXT NOT NULL,
-            details TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (scar_id) REFERENCES scars(id),
-            FOREIGN KEY (user_id) REFERENCES users(id)
-        )
-    ''')
-    
-    conn.commit()
-    
-    # Create default admin if not exists
-    admin_hash = hashlib.sha256("admin123".encode()).hexdigest()
-    try:
-        c.execute('''
-            INSERT OR IGNORE INTO users (username, password_hash, role, status)
-            VALUES (?, ?, ?, ?)
-        ''', ("admin", admin_hash, "admin", "approved"))
-        conn.commit()
-    except:
-        pass
-    
-    # Create demo vendor if not exists
-    try:
-        c.execute('''
-            INSERT OR IGNORE INTO vendors (name, code, contact_name, contact_email, status)
-            VALUES (?, ?, ?, ?, ?)
-        ''', ("Demo Supplier Inc.", "DEMO-001", "John Smith", "john@demosupplier.com", "active"))
-        conn.commit()
-        
-        # Create demo supplier user
-        supplier_hash = hashlib.sha256("supplier123".encode()).hexdigest()
-        c.execute("SELECT id FROM vendors WHERE code = 'DEMO-001'")
-        vendor = c.fetchone()
-        if vendor:
-            c.execute('''
-                INSERT OR IGNORE INTO users (username, password_hash, role, vendor_id, status)
-                VALUES (?, ?, ?, ?, ?)
-            ''', ("supplier", supplier_hash, "supplier", vendor['id'], "approved"))
-            conn.commit()
-    except:
-        pass
-    
-    conn.close()
-
-def hash_password(password):
-    return hashlib.sha256(password.encode()).hexdigest()
-
-# ============================================================================
 # AUTHENTICATION
 # ============================================================================
 
-def authenticate(username, password):
-    conn = get_db()
-    c = conn.cursor()
-    password_hash = hash_password(password)
-    c.execute('''
-        SELECT u.*, v.name as vendor_name, v.code as vendor_code
-        FROM users u
-        LEFT JOIN vendors v ON u.vendor_id = v.id
-        WHERE u.username = ? AND u.password_hash = ?
-    ''', (username, password_hash))
-    user = c.fetchone()
-    conn.close()
-    return user
+def authenticate(email, password):
+    """Authenticate user by email and password against Supabase"""
+    user = get_user_by_email(email)
+    if user and verify_password(password, user['password']):
+        return user
+    return None
 
 def check_login():
     if 'user' not in st.session_state or st.session_state.user is None:
@@ -610,15 +483,7 @@ def require_admin():
         st.stop()
 
 # ============================================================================
-# LOGO COMPONENT
-# ============================================================================
-
-def render_logo_text():
-    """Simple text-based logo for sidebar"""
-    return "CALYX CONTAINERS"
-
-# ============================================================================
-# GRID TABLE COMPONENT
+# UI HELPER COMPONENTS
 # ============================================================================
 
 def render_grid_table(headers, rows, row_key=None):
@@ -640,7 +505,7 @@ def render_grid_table(headers, rows, row_key=None):
 def get_status_badge(status):
     """Generate status badge HTML"""
     status_lower = status.lower()
-    if status_lower == 'open':
+    if status_lower in ['open', 'new']:
         return f'<span class="status-badge status-open">{status}</span>'
     elif status_lower in ['pending', 'in progress']:
         return f'<span class="status-badge status-pending">{status}</span>'
@@ -648,6 +513,8 @@ def get_status_badge(status):
         return f'<span class="status-badge status-closed">{status}</span>'
     elif status_lower == 'approved':
         return f'<span class="status-badge status-approved">{status}</span>'
+    elif status_lower == 'submitted':
+        return f'<span class="status-badge status-submitted">{status}</span>'
     else:
         return f'<span class="status-badge">{status}</span>'
 
@@ -658,13 +525,45 @@ def get_role_badge(role):
     else:
         return f'<span class="status-badge role-supplier">{role.upper()}</span>'
 
+def get_severity_badge(severity):
+    """Generate severity badge HTML"""
+    colors = {
+        'minor': ('🟢', '#D4EDDA', '#155724'),
+        'major': ('🟡', '#FFF3CD', '#856404'),
+        'critical': ('🔴', '#F8D7DA', '#721C24'),
+    }
+    icon, bg, fg = colors.get(severity, ('⚪', '#E5E5E5', '#666666'))
+    return f'<span class="status-badge" style="background:{bg};color:{fg};">{icon} {severity.upper()}</span>'
+
+def format_date(date_str):
+    """Format date string for display"""
+    if not date_str:
+        return "N/A"
+    try:
+        if 'T' in str(date_str):
+            dt = datetime.fromisoformat(str(date_str).replace('Z', '+00:00'))
+        else:
+            dt = datetime.strptime(str(date_str), '%Y-%m-%d')
+        return dt.strftime("%b %d, %Y")
+    except Exception:
+        return str(date_str)[:10] if date_str else '-'
+
+def format_datetime(date_str):
+    """Format datetime string for display"""
+    if not date_str:
+        return "N/A"
+    try:
+        dt = datetime.fromisoformat(str(date_str).replace('Z', '+00:00'))
+        return dt.strftime("%b %d, %Y at %I:%M %p")
+    except Exception:
+        return str(date_str)
+
 # ============================================================================
 # SIDEBAR
 # ============================================================================
 
 def render_sidebar():
     with st.sidebar:
-        # Logo using Streamlit native markdown
         st.markdown("## ◇ CALYX")
         st.caption("CONTAINERS")
         
@@ -672,7 +571,7 @@ def render_sidebar():
         
         if check_login():
             user = st.session_state.user
-            st.markdown(f"**User:** {user['username']}")
+            st.markdown(f"**User:** {user['name']}")
             st.markdown(f"**Role:** {user['role'].title()}")
             if user.get('vendor_name'):
                 st.markdown(f"**Vendor:** {user['vendor_name']}")
@@ -727,29 +626,29 @@ def login_page():
         st.subheader("Sign In")
         
         with st.form("login_form"):
-            username = st.text_input("Username")
+            email = st.text_input("Email")
             password = st.text_input("Password", type="password")
             submitted = st.form_submit_button("Sign In", use_container_width=True)
             
             if submitted:
-                if username and password:
-                    user = authenticate(username, password)
+                if email and password:
+                    user = authenticate(email, password)
                     if user:
                         if user['status'] != 'approved':
                             st.error("Your account is pending approval.")
                         else:
-                            st.session_state.user = dict(user)
+                            st.session_state.user = user
                             st.session_state.page = "dashboard"
                             st.rerun()
                     else:
                         st.error("Invalid credentials")
                 else:
-                    st.warning("Please enter username and password")
+                    st.warning("Please enter email and password")
         
         # Demo credentials info
         st.divider()
         st.caption("Demo Credentials")
-        st.info("**Admin:** admin / admin123\n\n**Supplier:** supplier / supplier123")
+        st.info("**Admin:** admin@calyxcontainers.com / admin123\n\n**Supplier:** jsmith@pacificglass.com / supplier123")
 
 # ============================================================================
 # DASHBOARD PAGE
@@ -758,106 +657,68 @@ def login_page():
 def dashboard_page():
     require_login()
     user = st.session_state.user
+    is_admin = user['role'] == 'admin'
+    vendor_id = None if is_admin else user.get('vendor_id')
     
     st.markdown("# Dashboard")
     st.markdown("---")
     
-    conn = get_db()
-    c = conn.cursor()
-    
-    # Get statistics based on role
-    if user['role'] == 'admin':
-        c.execute("SELECT COUNT(*) FROM scars")
-        total_scars = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM scars WHERE status = 'Open'")
-        open_scars = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM scars WHERE status = 'Closed'")
-        closed_scars = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM vendors WHERE status = 'active'")
-        active_vendors = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM users WHERE status = 'pending'")
-        pending_users = c.fetchone()[0]
-    else:
-        vendor_id = user['vendor_id']
-        c.execute("SELECT COUNT(*) FROM scars WHERE vendor_id = ?", (vendor_id,))
-        total_scars = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM scars WHERE vendor_id = ? AND status = 'Open'", (vendor_id,))
-        open_scars = c.fetchone()[0]
-        
-        c.execute("SELECT COUNT(*) FROM scars WHERE vendor_id = ? AND status = 'Closed'", (vendor_id,))
-        closed_scars = c.fetchone()[0]
-        
-        active_vendors = None
-        pending_users = None
+    # Get statistics from Supabase
+    stats = get_scar_stats(vendor_id)
     
     # Stats row
     col1, col2, col3, col4 = st.columns(4)
     
     with col1:
-        st.metric("Total SCARs", total_scars)
+        st.metric("Total SCARs", stats.get('total', 0))
     
     with col2:
-        st.metric("Open SCARs", open_scars)
+        st.metric("Open SCARs", stats.get('open', 0))
     
     with col3:
-        st.metric("Closed SCARs", closed_scars)
+        st.metric("Closed SCARs", stats.get('closed', 0))
     
-    if user['role'] == 'admin':
+    if is_admin:
         with col4:
-            st.metric("Active Vendors", active_vendors)
+            st.metric("Awaiting Review", stats.get('submitted', 0))
+    else:
+        with col4:
+            st.metric("Overdue", stats.get('overdue', 0))
+    
+    # Overdue alert
+    if stats.get('overdue', 0) > 0:
+        st.warning(f"⚠️ {stats['overdue']} SCAR(s) are past their response due date!")
     
     st.markdown("<br>", unsafe_allow_html=True)
     
     # Recent SCARs
     st.markdown("### Recent SCARs")
     
-    if user['role'] == 'admin':
-        c.execute('''
-            SELECT s.*, v.name as vendor_name, v.code as vendor_code
-            FROM scars s
-            LEFT JOIN vendors v ON s.vendor_id = v.id
-            ORDER BY s.created_at DESC
-            LIMIT 10
-        ''')
-    else:
-        c.execute('''
-            SELECT s.*, v.name as vendor_name, v.code as vendor_code
-            FROM scars s
-            LEFT JOIN vendors v ON s.vendor_id = v.id
-            WHERE s.vendor_id = ?
-            ORDER BY s.created_at DESC
-            LIMIT 10
-        ''', (user['vendor_id'],))
-    
-    scars = c.fetchall()
-    conn.close()
+    scars = get_all_scars(vendor_id=vendor_id)[:10]
     
     if scars:
-        headers = ["SCAR #", "Vendor", "Product", "Status", "Priority", "Created"]
+        headers = ["SCAR #", "Vendor", "Product", "Status", "Severity", "Due Date"]
         rows = []
         for scar in scars:
             rows.append([
-                scar['scar_number'],
-                scar['vendor_name'] or '-',
-                scar['product_name'] or '-',
-                get_status_badge(scar['status']),
-                scar['priority'],
-                scar['created_at'][:10] if scar['created_at'] else '-'
+                scar.get('scar_number', '-'),
+                scar.get('vendor_name') or '-',
+                scar.get('product_name') or '-',
+                get_status_badge(scar.get('status', 'open')),
+                get_severity_badge(scar['severity']) if scar.get('severity') else '-',
+                format_date(scar.get('response_due_date')),
             ])
         
         st.markdown(render_grid_table(headers, rows), unsafe_allow_html=True)
     else:
-        st.info("No SCARs found.")
+        st.info("No SCARs found." + (" Create your first SCAR to get started." if is_admin else ""))
     
     # Pending users alert for admin
-    if user['role'] == 'admin' and pending_users > 0:
-        st.markdown("<br>", unsafe_allow_html=True)
-        st.warning(f"⚠️ {pending_users} user(s) pending approval. Go to Users to review.")
+    if is_admin:
+        pending = get_pending_users_count()
+        if pending > 0:
+            st.markdown("<br>", unsafe_allow_html=True)
+            st.warning(f"⚠️ {pending} user(s) pending approval. Go to Users to review.")
 
 # ============================================================================
 # SCARS PAGE
@@ -866,12 +727,14 @@ def dashboard_page():
 def scars_page():
     require_login()
     user = st.session_state.user
+    is_admin = user['role'] == 'admin'
+    vendor_id = None if is_admin else user.get('vendor_id')
     
     st.markdown("# SCAR Management")
     st.markdown("---")
     
     # Create new SCAR (admin only)
-    if user['role'] == 'admin':
+    if is_admin:
         with st.expander("➕ Create New SCAR", expanded=False):
             create_scar_form()
     
@@ -879,56 +742,46 @@ def scars_page():
     col1, col2, col3 = st.columns(3)
     
     with col1:
-        status_filter = st.selectbox("Status", ["All", "Open", "In Progress", "Closed"])
+        status_filter = st.selectbox("Status", ["All", "Open", "Submitted", "Closed"])
     
     with col2:
-        priority_filter = st.selectbox("Priority", ["All", "High", "Medium", "Low"])
+        severity_filter = st.selectbox("Severity", ["All", "Minor", "Major", "Critical"])
     
-    conn = get_db()
-    c = conn.cursor()
+    with col3:
+        search = st.text_input("🔍 Search", placeholder="SCAR number, product...")
     
-    # Build query
-    query = '''
-        SELECT s.*, v.name as vendor_name, v.code as vendor_code
-        FROM scars s
-        LEFT JOIN vendors v ON s.vendor_id = v.id
-        WHERE 1=1
-    '''
-    params = []
+    # Get SCARs from Supabase
+    status_val = None if status_filter == "All" else status_filter.lower()
+    scars = get_all_scars(vendor_id=vendor_id, status=status_val)
     
-    if user['role'] != 'admin':
-        query += " AND s.vendor_id = ?"
-        params.append(user['vendor_id'])
+    # Apply severity filter
+    if severity_filter != "All":
+        scars = [s for s in scars if s.get('severity') == severity_filter.lower()]
     
-    if status_filter != "All":
-        query += " AND s.status = ?"
-        params.append(status_filter)
-    
-    if priority_filter != "All":
-        query += " AND s.priority = ?"
-        params.append(priority_filter)
-    
-    query += " ORDER BY s.created_at DESC"
-    
-    c.execute(query, params)
-    scars = c.fetchall()
-    conn.close()
+    # Apply search filter
+    if search:
+        search_lower = search.lower()
+        scars = [s for s in scars if
+                 search_lower in s.get('scar_number', '').lower() or
+                 search_lower in (s.get('product_name') or '').lower() or
+                 search_lower in (s.get('vendor_name') or '').lower() or
+                 search_lower in (s.get('defect_type') or '').lower()]
     
     st.markdown(f"### SCARs ({len(scars)} total)")
     
     if scars:
-        headers = ["SCAR #", "Vendor", "Product", "Status", "Priority", "Due Date", "Actions"]
+        headers = ["SCAR #", "Vendor", "Product", "Status", "Severity", "Due Date", "Actions"]
         rows = []
         
         for scar in scars:
-            action_btn = f'<span class="calyx-action" style="cursor: pointer;">View Details</span>'
+            action_btn = '<span class="calyx-action" style="cursor: pointer;">View Details</span>'
             rows.append([
-                scar['scar_number'],
-                f"{scar['vendor_code']} - {scar['vendor_name']}" if scar['vendor_name'] else '-',
-                scar['product_name'] or '-',
-                get_status_badge(scar['status']),
-                scar['priority'],
-                scar['due_date'] or '-',
+                scar.get('scar_number', '-'),
+                scar.get('vendor_name') or '-',
+                scar.get('product_name') or '-',
+                get_status_badge(scar.get('status', 'open')),
+                get_severity_badge(scar['severity']) if scar.get('severity') else '-',
+                format_date(scar.get('response_due_date')),
                 action_btn
             ])
         
@@ -938,82 +791,120 @@ def scars_page():
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("### SCAR Details")
         
-        scar_numbers = [s['scar_number'] for s in scars]
-        selected_scar = st.selectbox("Select SCAR to view/edit:", ["Select..."] + scar_numbers)
+        scar_options = {s['scar_number']: s['id'] for s in scars}
+        selected_scar = st.selectbox("Select SCAR to view/edit:", ["Select..."] + list(scar_options.keys()))
         
         if selected_scar != "Select...":
-            scar_detail_view(selected_scar)
+            scar_id = scar_options[selected_scar]
+            scar_detail_view(scar_id)
     else:
         st.info("No SCARs found matching the criteria.")
 
+# ============================================================================
+# CREATE SCAR FORM
+# ============================================================================
+
 def create_scar_form():
-    conn = get_db()
-    c = conn.cursor()
-    c.execute("SELECT id, name, code FROM vendors WHERE status = 'active' ORDER BY name")
-    vendors = c.fetchall()
-    conn.close()
+    vendors = get_all_vendors()
     
     if not vendors:
-        st.warning("No active vendors. Please add a vendor first.")
+        st.warning("No vendors found. Please add a vendor first.")
         return
     
     with st.form("new_scar_form"):
+        st.markdown("### Section 1: SCAR Details")
+        
         col1, col2 = st.columns(2)
         
         with col1:
-            vendor_options = {f"{v['code']} - {v['name']}": v['id'] for v in vendors}
+            vendor_options = {v['name']: v['id'] for v in vendors}
             selected_vendor = st.selectbox("Vendor *", options=list(vendor_options.keys()))
-            product_name = st.text_input("Product Name *")
-            part_number = st.text_input("Part Number")
+            
+            date_issued = st.date_input("Date Issued *", value=datetime.now().date())
+            response_due_date = st.date_input("Response Due Date *", value=(datetime.now() + timedelta(days=14)).date())
+            ncr_number = st.text_input("NCR #", placeholder="e.g., NCR-2026-0001")
         
         with col2:
-            priority = st.selectbox("Priority", ["Low", "Medium", "High"])
-            due_date = st.date_input("Due Date")
-            lot_number = st.text_input("Lot Number")
+            # Get contacts for selected vendor
+            vendor_id = vendor_options.get(selected_vendor)
+            contacts = get_vendor_contacts(vendor_id) if vendor_id else []
+            
+            if contacts:
+                contact_options = {f"{c['name']} ({c['email']})": c['id'] for c in contacts}
+                selected_contact = st.selectbox("Vendor Contact *", options=list(contact_options.keys()))
+            else:
+                st.text_input("Vendor Contact", value="No contacts — add in Vendors page", disabled=True)
+                selected_contact = None
+            
+            po_so_number = st.text_input("PO/SO #", placeholder="e.g., PO-12345")
+            part_sku_number = st.text_input("Part/SKU #", placeholder="e.g., SKU-12345")
         
-        nc_description = st.text_area("Non-Conformity Description *")
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            affected_quantity = st.number_input("Affected Quantity", min_value=0, value=0)
+        with col2:
+            lot_numbers = st.text_input("Lot Number(s)", placeholder="e.g., LOT-2026-A001")
         
-        submitted = st.form_submit_button("Create SCAR", use_container_width=True)
+        st.markdown("---")
+        st.markdown("### Section 2: Non-Conformity")
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            product_name = st.text_input("Product Name *", placeholder="e.g., 500ml Clear Glass Jar")
+        with col2:
+            defect_type = st.selectbox("Defect Type *", 
+                ["", "Dimensional", "Visual", "Functional", "Labeling", "Packaging", "Contamination", "Documentation", "Other"])
+        
+        nonconformity_description = st.text_area("Non-Conformity Description *", height=150,
+            placeholder="Describe: what was found, where discovered, impact on quality/safety")
+        
+        severity = st.radio("Severity *", options=["minor", "major", "critical"],
+            format_func=lambda x: {"minor": "🟢 Minor", "major": "🟡 Major", "critical": "🔴 Critical"}[x],
+            horizontal=True)
+        
+        submitted = st.form_submit_button("📋 Create SCAR", use_container_width=True)
         
         if submitted:
-            if selected_vendor and product_name and nc_description:
-                vendor_id = vendor_options[selected_vendor]
-                scar_number = f"SCAR-{datetime.now().strftime('%Y%m%d%H%M%S')}"
-                
-                conn = get_db()
-                c = conn.cursor()
-                c.execute('''
-                    INSERT INTO scars (scar_number, vendor_id, product_name, part_number, 
-                                      lot_number, priority, due_date, nc_description, 
-                                      created_by, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'Open')
-                ''', (scar_number, vendor_id, product_name, part_number, lot_number, 
-                      priority, due_date, nc_description, st.session_state.user['id']))
-                
-                # Log activity
-                c.execute('''
-                    INSERT INTO activity_log (scar_id, user_id, action, details)
-                    VALUES (?, ?, ?, ?)
-                ''', (c.lastrowid, st.session_state.user['id'], 'Created', f'SCAR {scar_number} created'))
-                
-                conn.commit()
-                conn.close()
-                
-                st.success(f"SCAR {scar_number} created successfully!")
-                st.rerun()
+            errors = []
+            if not selected_vendor: errors.append("Select a vendor")
+            if not selected_contact and contacts: errors.append("Select a vendor contact")
+            if not product_name: errors.append("Enter a product name")
+            if not defect_type: errors.append("Select a defect type")
+            if not nonconformity_description: errors.append("Provide a non-conformity description")
+            
+            if errors:
+                for e in errors:
+                    st.error(e)
             else:
-                st.error("Please fill in all required fields.")
+                scar_data = {
+                    'date_issued': date_issued.isoformat(),
+                    'response_due_date': response_due_date.isoformat(),
+                    'vendor_id': vendor_id,
+                    'vendor_contact_id': contact_options[selected_contact] if selected_contact else None,
+                    'ncr_number': ncr_number or None,
+                    'po_so_number': po_so_number or None,
+                    'part_sku_number': part_sku_number or None,
+                    'affected_quantity': affected_quantity if affected_quantity > 0 else None,
+                    'lot_numbers': lot_numbers or None,
+                    'product_name': product_name,
+                    'defect_type': defect_type,
+                    'nonconformity_description': nonconformity_description,
+                    'severity': severity,
+                }
+                
+                try:
+                    new_scar = create_scar(scar_data, st.session_state.user['id'])
+                    st.success(f"✅ SCAR {new_scar['scar_number']} created successfully!")
+                    st.rerun()
+                except Exception as e:
+                    st.error(f"Failed to create SCAR: {str(e)}")
 
-def scar_detail_view(scar_number):
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''
-        SELECT s.*, v.name as vendor_name, v.code as vendor_code
-        FROM scars s
-        LEFT JOIN vendors v ON s.vendor_id = v.id
-        WHERE s.scar_number = ?
-    ''', (scar_number,))
-    scar = c.fetchone()
+# ============================================================================
+# SCAR DETAIL VIEW
+# ============================================================================
+
+def scar_detail_view(scar_id):
+    scar = get_scar_by_id(scar_id)
     
     if not scar:
         st.error("SCAR not found")
@@ -1021,215 +912,329 @@ def scar_detail_view(scar_number):
     
     user = st.session_state.user
     is_admin = user['role'] == 'admin'
+    can_edit = scar['status'] in ['new', 'open']
+    can_submit = user['role'] == 'supplier' and scar['status'] == 'open'
+    can_verify = is_admin and scar['status'] == 'submitted'
     
     # SCAR Header
     col1, col2 = st.columns([3, 1])
     with col1:
         st.subheader(scar['scar_number'])
-        st.caption(f"{scar['vendor_code']} - {scar['vendor_name']}")
+        st.caption(f"{scar.get('vendor_name', 'Unknown Vendor')} | {scar.get('product_name', '')}")
     with col2:
-        status_color = "🟢" if scar['status'] == 'Closed' else "🟡" if scar['status'] == 'In Progress' else "🔵"
-        st.markdown(f"**Status:** {status_color} {scar['status']}")
+        status_color = "🟢" if scar['status'] == 'closed' else "🟡" if scar['status'] == 'submitted' else "🔵"
+        st.markdown(f"**Status:** {status_color} {scar['status'].upper()}")
+        if scar.get('severity'):
+            st.markdown(f"**Severity:** {scar['severity'].upper()}")
     
     # Tabs for different sections
     tabs = st.tabs([
-        "1. Details", 
-        "2. Non-Conformity", 
-        "3. Containment", 
+        "1. Details",
+        "2. Non-Conformity",
+        "3. Containment",
         "4. Root Cause",
         "5. Corrective Action",
         "6. Preventive Action",
         "7. Verification",
-        "Activity Log"
+        "📎 Attachments",
+        "📜 Activity Log"
     ])
     
-    # Tab 1: Details
+    # Tab 1: Details (read-only)
     with tabs[0]:
-        with st.form("scar_details_form"):
-            col1, col2 = st.columns(2)
-            with col1:
-                product_name = st.text_input("Product Name", value=scar['product_name'] or '')
-                part_number = st.text_input("Part Number", value=scar['part_number'] or '')
-                lot_number = st.text_input("Lot Number", value=scar['lot_number'] or '')
-            with col2:
-                quantity_affected = st.number_input("Quantity Affected", value=scar['quantity_affected'] or 0)
-                priority = st.selectbox("Priority", ["Low", "Medium", "High"], 
-                                       index=["Low", "Medium", "High"].index(scar['priority']))
-                status = st.selectbox("Status", ["Open", "In Progress", "Closed"],
-                                     index=["Open", "In Progress", "Closed"].index(scar['status']) if scar['status'] in ["Open", "In Progress", "Closed"] else 0,
-                                     disabled=not is_admin)
-            
-            if st.form_submit_button("Update Details", use_container_width=True):
-                c.execute('''
-                    UPDATE scars SET product_name=?, part_number=?, lot_number=?, 
-                                    quantity_affected=?, priority=?, status=?
-                    WHERE id=?
-                ''', (product_name, part_number, lot_number, quantity_affected, priority, status, scar['id']))
-                conn.commit()
-                st.success("Details updated!")
-                st.rerun()
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_input("SCAR Number", value=scar['scar_number'], disabled=True)
+            st.text_input("Date Issued", value=format_date(scar.get('date_issued')), disabled=True)
+            st.text_input("Response Due Date", value=format_date(scar.get('response_due_date')), disabled=True)
+            st.text_input("NCR #", value=scar.get('ncr_number') or '', disabled=True)
+        with col2:
+            st.text_input("Supplier", value=scar.get('vendor_name') or '', disabled=True)
+            st.text_input("Contact", value=scar.get('contact_name') or '', disabled=True)
+            st.text_input("PO/SO #", value=scar.get('po_so_number') or '', disabled=True)
+            st.text_input("Part/SKU #", value=scar.get('part_sku_number') or '', disabled=True)
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_input("Affected Quantity", value=str(scar.get('affected_quantity') or ''), disabled=True)
+        with col2:
+            st.text_input("Lot Number(s)", value=scar.get('lot_numbers') or '', disabled=True)
     
-    # Tab 2: Non-Conformity
+    # Tab 2: Non-Conformity (read-only)
     with tabs[1]:
-        with st.form("nc_form"):
-            nc_description = st.text_area("Non-Conformity Description", 
-                                         value=scar['nc_description'] or '', height=150)
-            nc_category = st.selectbox("Category", 
-                                      ["", "Dimensional", "Material", "Functional", "Documentation", "Other"],
-                                      index=["", "Dimensional", "Material", "Functional", "Documentation", "Other"].index(scar['nc_category']) if scar['nc_category'] else 0)
-            detection_method = st.text_input("Detection Method", value=scar['detection_method'] or '')
-            
-            if st.form_submit_button("Update Non-Conformity", use_container_width=True):
-                c.execute('''
-                    UPDATE scars SET nc_description=?, nc_category=?, detection_method=?
-                    WHERE id=?
-                ''', (nc_description, nc_category, detection_method, scar['id']))
-                conn.commit()
-                st.success("Non-conformity details updated!")
-                st.rerun()
+        st.text_area("Non-Conformity Description", value=scar.get('nonconformity_description') or '', disabled=True, height=150)
+        col1, col2 = st.columns(2)
+        with col1:
+            st.text_input("Defect Type", value=scar.get('defect_type') or '', disabled=True)
+        with col2:
+            st.text_input("Severity", value=(scar.get('severity') or '').upper(), disabled=True)
     
     # Tab 3: Containment
     with tabs[2]:
         with st.form("containment_form"):
-            containment_actions = st.text_area("Containment Actions", 
-                                              value=scar['containment_actions'] or '', height=150)
+            containment_isolate = st.text_area("3.1 Isolate Affected Inventory",
+                value=scar.get('containment_isolate') or '', height=100, disabled=not can_edit)
+            containment_screen_sort = st.text_area("3.2 Screen and Sort",
+                value=scar.get('containment_screen_sort') or '', height=100, disabled=not can_edit)
             col1, col2 = st.columns(2)
             with col1:
-                containment_date = st.date_input("Containment Date", 
-                                                value=datetime.strptime(scar['containment_date'], '%Y-%m-%d').date() if scar['containment_date'] else None)
+                containment_prepared_by = st.text_input("Prepared By",
+                    value=scar.get('containment_prepared_by') or '', disabled=not can_edit)
             with col2:
-                containment_responsible = st.text_input("Responsible Party", 
-                                                       value=scar['containment_responsible'] or '')
+                containment_date = st.text_input("Date (YYYY-MM-DD)",
+                    value=scar.get('containment_date') or '', disabled=not can_edit)
             
-            if st.form_submit_button("Update Containment", use_container_width=True):
-                c.execute('''
-                    UPDATE scars SET containment_actions=?, containment_date=?, containment_responsible=?
-                    WHERE id=?
-                ''', (containment_actions, containment_date, containment_responsible, scar['id']))
-                conn.commit()
-                st.success("Containment actions updated!")
-                st.rerun()
+            if can_edit:
+                if st.form_submit_button("💾 Save Containment", use_container_width=True):
+                    update_scar(scar_id, {
+                        'containment_isolate': containment_isolate,
+                        'containment_screen_sort': containment_screen_sort,
+                        'containment_prepared_by': containment_prepared_by,
+                        'containment_date': containment_date or None,
+                    }, user['id'])
+                    st.success("Containment section saved!")
+                    st.rerun()
     
     # Tab 4: Root Cause
     with tabs[3]:
         with st.form("rca_form"):
-            root_cause = st.text_area("Root Cause Analysis", 
-                                     value=scar['root_cause'] or '', height=150)
+            root_cause = st.text_area("4.1 Root Cause(s) — 5 Whys Analysis",
+                value=scar.get('root_cause') or '', height=150, disabled=not can_edit)
+            root_cause_evidence = st.text_area("4.2 Evidence Supporting Root Cause",
+                value=scar.get('root_cause_evidence') or '', height=100, disabled=not can_edit)
             col1, col2 = st.columns(2)
             with col1:
-                rca_method = st.selectbox("Analysis Method", 
-                                         ["", "5 Whys", "Fishbone/Ishikawa", "FMEA", "8D", "Other"],
-                                         index=["", "5 Whys", "Fishbone/Ishikawa", "FMEA", "8D", "Other"].index(scar['rca_method']) if scar['rca_method'] else 0)
+                root_cause_approved_by = st.text_input("RCA Approved By",
+                    value=scar.get('root_cause_approved_by') or '', disabled=not can_edit)
             with col2:
-                rca_completed_date = st.date_input("RCA Completed Date",
-                                                   value=datetime.strptime(scar['rca_completed_date'], '%Y-%m-%d').date() if scar['rca_completed_date'] else None)
+                root_cause_date = st.text_input("Date (YYYY-MM-DD)",
+                    value=scar.get('root_cause_date') or '', disabled=not can_edit)
             
-            if st.form_submit_button("Update Root Cause", use_container_width=True):
-                c.execute('''
-                    UPDATE scars SET root_cause=?, rca_method=?, rca_completed_date=?
-                    WHERE id=?
-                ''', (root_cause, rca_method, rca_completed_date, scar['id']))
-                conn.commit()
-                st.success("Root cause analysis updated!")
-                st.rerun()
+            if can_edit:
+                if st.form_submit_button("💾 Save Root Cause", use_container_width=True):
+                    update_scar(scar_id, {
+                        'root_cause': root_cause,
+                        'root_cause_evidence': root_cause_evidence,
+                        'root_cause_approved_by': root_cause_approved_by,
+                        'root_cause_date': root_cause_date or None,
+                    }, user['id'])
+                    st.success("Root Cause section saved!")
+                    st.rerun()
     
     # Tab 5: Corrective Action
     with tabs[4]:
         with st.form("ca_form"):
-            corrective_action = st.text_area("Corrective Action", 
-                                            value=scar['corrective_action'] or '', height=150)
+            corrective_action = st.text_area("Corrective Action / Rationale",
+                value=scar.get('corrective_action') or '', height=150, disabled=not can_edit)
             col1, col2 = st.columns(2)
             with col1:
-                ca_responsible = st.text_input("Responsible Party", value=scar['ca_responsible'] or '')
-                ca_target_date = st.date_input("Target Date",
-                                               value=datetime.strptime(scar['ca_target_date'], '%Y-%m-%d').date() if scar['ca_target_date'] else None)
+                correction_approved_by = st.text_input("CA Approved By",
+                    value=scar.get('correction_approved_by') or '', disabled=not can_edit)
             with col2:
-                ca_completion_date = st.date_input("Completion Date",
-                                                   value=datetime.strptime(scar['ca_completion_date'], '%Y-%m-%d').date() if scar['ca_completion_date'] else None)
+                correction_date = st.text_input("Date (YYYY-MM-DD)",
+                    value=scar.get('correction_date') or '', disabled=not can_edit)
             
-            if st.form_submit_button("Update Corrective Action", use_container_width=True):
-                c.execute('''
-                    UPDATE scars SET corrective_action=?, ca_responsible=?, ca_target_date=?, ca_completion_date=?
-                    WHERE id=?
-                ''', (corrective_action, ca_responsible, ca_target_date, ca_completion_date, scar['id']))
-                conn.commit()
-                st.success("Corrective action updated!")
-                st.rerun()
+            if can_edit:
+                if st.form_submit_button("💾 Save Corrective Action", use_container_width=True):
+                    update_scar(scar_id, {
+                        'corrective_action': corrective_action,
+                        'correction_approved_by': correction_approved_by,
+                        'correction_date': correction_date or None,
+                    }, user['id'])
+                    st.success("Corrective Action section saved!")
+                    st.rerun()
     
     # Tab 6: Preventive Action
     with tabs[5]:
         with st.form("pa_form"):
-            preventive_action = st.text_area("Preventive Action", 
-                                            value=scar['preventive_action'] or '', height=150)
+            preventive_action = st.text_area("Preventive Action / Responsible / Target Date",
+                value=scar.get('preventive_action') or '', height=150, disabled=not can_edit)
             col1, col2 = st.columns(2)
             with col1:
-                pa_responsible = st.text_input("Responsible Party", value=scar['pa_responsible'] or '')
+                prevention_approved_by = st.text_input("PA Approved By",
+                    value=scar.get('prevention_approved_by') or '', disabled=not can_edit)
             with col2:
-                pa_target_date = st.date_input("Target Date",
-                                               value=datetime.strptime(scar['pa_target_date'], '%Y-%m-%d').date() if scar['pa_target_date'] else None)
+                prevention_date = st.text_input("Date (YYYY-MM-DD)",
+                    value=scar.get('prevention_date') or '', disabled=not can_edit)
             
-            if st.form_submit_button("Update Preventive Action", use_container_width=True):
-                c.execute('''
-                    UPDATE scars SET preventive_action=?, pa_responsible=?, pa_target_date=?
-                    WHERE id=?
-                ''', (preventive_action, pa_responsible, pa_target_date, scar['id']))
-                conn.commit()
-                st.success("Preventive action updated!")
-                st.rerun()
+            if can_edit:
+                if st.form_submit_button("💾 Save Preventive Action", use_container_width=True):
+                    update_scar(scar_id, {
+                        'preventive_action': preventive_action,
+                        'prevention_approved_by': prevention_approved_by,
+                        'prevention_date': prevention_date or None,
+                    }, user['id'])
+                    st.success("Preventive Action section saved!")
+                    st.rerun()
     
-    # Tab 7: Verification
+    # Tab 7: Verification (admin only)
     with tabs[6]:
-        with st.form("verification_form"):
-            verification_method = st.text_area("Verification Method", 
-                                              value=scar['verification_method'] or '', height=100)
-            verification_result = st.selectbox("Result", 
-                                              ["", "Effective", "Not Effective", "Pending"],
-                                              index=["", "Effective", "Not Effective", "Pending"].index(scar['verification_result']) if scar['verification_result'] else 0,
-                                              disabled=not is_admin)
-            col1, col2 = st.columns(2)
-            with col1:
-                verification_date = st.date_input("Verification Date",
-                                                  value=datetime.strptime(scar['verification_date'], '%Y-%m-%d').date() if scar['verification_date'] else None,
-                                                  disabled=not is_admin)
-            with col2:
-                verified_by = st.text_input("Verified By", value=scar['verified_by'] or '', disabled=not is_admin)
-            
-            if st.form_submit_button("Update Verification", use_container_width=True, disabled=not is_admin):
-                c.execute('''
-                    UPDATE scars SET verification_method=?, verification_result=?, 
-                                    verification_date=?, verified_by=?
-                    WHERE id=?
-                ''', (verification_method, verification_result, verification_date, verified_by, scar['id']))
-                conn.commit()
-                st.success("Verification updated!")
-                st.rerun()
+        if not is_admin:
+            st.info("🔒 This section is only visible to the Calyx quality team.")
+            if scar['status'] == 'closed' and scar.get('verification_acceptable') == 'yes':
+                st.success("✅ Supplier response was accepted and verified.")
+        else:
+            with st.form("verification_form"):
+                verification_acceptable = st.radio("Supplier Response Acceptable?",
+                    options=['', 'yes', 'no'],
+                    format_func=lambda x: {'': 'Select...', 'yes': '✅ Yes', 'no': '❌ No'}[x],
+                    disabled=scar['status'] == 'closed')
+                effectiveness_check = st.text_area("Effectiveness Check",
+                    value=scar.get('effectiveness_check') or '', height=100,
+                    disabled=scar['status'] == 'closed')
+                col1, col2 = st.columns(2)
+                with col1:
+                    verified_by = st.text_input("Verified By",
+                        value=scar.get('verified_by') or '', disabled=scar['status'] == 'closed')
+                with col2:
+                    verification_date = st.text_input("Date (YYYY-MM-DD)",
+                        value=scar.get('verification_date') or '', disabled=scar['status'] == 'closed')
+                
+                if scar['status'] != 'closed':
+                    if st.form_submit_button("💾 Save Verification", use_container_width=True):
+                        update_scar(scar_id, {
+                            'verification_acceptable': verification_acceptable,
+                            'effectiveness_check': effectiveness_check,
+                            'verified_by': verified_by,
+                            'verification_date': verification_date or None,
+                        }, user['id'])
+                        st.success("Verification section saved!")
+                        st.rerun()
     
-    # Tab 8: Activity Log
+    # Tab 8: Attachments
     with tabs[7]:
-        c.execute('''
-            SELECT al.*, u.username
-            FROM activity_log al
-            LEFT JOIN users u ON al.user_id = u.id
-            WHERE al.scar_id = ?
-            ORDER BY al.created_at DESC
-        ''', (scar['id'],))
-        activities = c.fetchall()
+        st.markdown("### 📎 Documents & Photos")
+        
+        # Upload new attachment
+        if can_edit or is_admin:
+            with st.form("upload_form"):
+                uploaded_file = st.file_uploader(
+                    "Upload a file",
+                    type=["jpg", "jpeg", "png", "gif", "webp", "pdf", "doc", "docx", "xls", "xlsx", "csv", "txt"],
+                    help="Max 50MB. Images, PDFs, Word, Excel, CSV, or text files."
+                )
+                col1, col2 = st.columns(2)
+                with col1:
+                    category = st.selectbox("Category", [
+                        "general", "evidence", "containment", "root_cause",
+                        "corrective", "preventive", "verification"
+                    ])
+                with col2:
+                    description = st.text_input("Description (optional)")
+                
+                if st.form_submit_button("📤 Upload", use_container_width=True):
+                    if uploaded_file:
+                        try:
+                            file_bytes = uploaded_file.read()
+                            attachment = upload_attachment(
+                                scar_id=scar_id,
+                                user_id=user['id'],
+                                file_name=uploaded_file.name,
+                                file_bytes=file_bytes,
+                                file_type=uploaded_file.type,
+                                category=category,
+                                description=description or None,
+                            )
+                            st.success(f"✅ {uploaded_file.name} uploaded!")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"Upload failed: {str(e)}")
+                    else:
+                        st.warning("Please select a file first.")
+        
+        # List existing attachments
+        attachments = get_scar_attachments(scar_id)
+        
+        if attachments:
+            for att in attachments:
+                col1, col2, col3, col4 = st.columns([3, 1.5, 1.5, 1])
+                with col1:
+                    file_icon = "🖼️" if att['file_type'] and att['file_type'].startswith('image/') else "📄"
+                    st.markdown(f"**{file_icon} {att['file_name']}**")
+                    if att.get('description'):
+                        st.caption(att['description'])
+                with col2:
+                    st.caption(f"Category: {att['category']}")
+                    size_kb = (att.get('file_size') or 0) / 1024
+                    st.caption(f"Size: {size_kb:.0f} KB")
+                with col3:
+                    st.caption(f"By: {att.get('uploaded_by_name', 'Unknown')}")
+                    st.caption(format_date(att.get('created_at')))
+                with col4:
+                    try:
+                        url = get_attachment_download_url(att['storage_path'])
+                        st.markdown(f"[⬇ Download]({url})")
+                    except Exception:
+                        st.caption("Link unavailable")
+                    
+                    if is_admin:
+                        if st.button("🗑️", key=f"del_att_{att['id']}"):
+                            delete_attachment(att['id'], scar_id=scar_id, user_id=user['id'])
+                            st.rerun()
+                
+                st.markdown("---")
+        else:
+            st.info("No files attached to this SCAR yet.")
+    
+    # Tab 9: Activity Log
+    with tabs[8]:
+        activities = get_scar_activity(scar_id)
         
         if activities:
             headers = ["Date/Time", "User", "Action", "Details"]
             rows = []
             for act in activities:
                 rows.append([
-                    act['created_at'],
-                    act['username'] or 'System',
-                    act['action'],
-                    act['details'] or '-'
+                    format_datetime(act.get('created_at')),
+                    act.get('user_name') or 'System',
+                    act.get('action', ''),
+                    act.get('details') or '-'
                 ])
             st.markdown(render_grid_table(headers, rows), unsafe_allow_html=True)
         else:
             st.info("No activity recorded yet.")
     
-    conn.close()
+    # Action buttons
+    st.markdown("---")
+    st.markdown("### Actions")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    if can_submit:
+        with col1:
+            if st.button("📤 Submit Response", type="primary", use_container_width=True):
+                # Validate required sections
+                missing = []
+                if not scar.get('containment_isolate'): missing.append("Containment")
+                if not scar.get('root_cause'): missing.append("Root Cause")
+                if not scar.get('corrective_action'): missing.append("Corrective Action")
+                if not scar.get('preventive_action'): missing.append("Preventive Action")
+                
+                if missing:
+                    st.error(f"Complete these sections first: {', '.join(missing)}")
+                else:
+                    submit_scar(scar_id, user['id'])
+                    st.success("✅ Response submitted!")
+                    st.rerun()
+    
+    if can_verify:
+        with col1:
+            if st.button("✅ Verify & Close", type="primary", use_container_width=True):
+                verify_scar(scar_id, user['id'], acceptable=True)
+                st.success("SCAR verified and closed!")
+                st.rerun()
+        with col2:
+            if st.button("↩️ Return to Supplier", use_container_width=True):
+                verify_scar(scar_id, user['id'], acceptable=False)
+                st.success("SCAR returned to supplier.")
+                st.rerun()
+    
+    if is_admin and scar['status'] == 'closed':
+        with col1:
+            if st.button("🔄 Reopen SCAR", use_container_width=True):
+                verify_scar(scar_id, user['id'], acceptable=False, reopen=True)
+                st.success("SCAR reopened!")
+                st.rerun()
 
 # ============================================================================
 # VENDORS PAGE
@@ -1247,63 +1252,38 @@ def vendors_page():
             col1, col2 = st.columns(2)
             with col1:
                 vendor_name = st.text_input("Vendor Name *")
-                vendor_code = st.text_input("Vendor Code *")
-                contact_name = st.text_input("Contact Name")
+                vendor_phone = st.text_input("Phone")
             with col2:
-                contact_email = st.text_input("Contact Email")
-                contact_phone = st.text_input("Contact Phone")
-                status = st.selectbox("Status", ["active", "inactive"])
-            
-            address = st.text_area("Address", height=80)
+                vendor_address = st.text_area("Address", height=80)
             
             if st.form_submit_button("Add Vendor", use_container_width=True):
-                if vendor_name and vendor_code:
-                    conn = get_db()
-                    c = conn.cursor()
+                if vendor_name:
                     try:
-                        c.execute('''
-                            INSERT INTO vendors (name, code, contact_name, contact_email, 
-                                               contact_phone, address, status)
-                            VALUES (?, ?, ?, ?, ?, ?, ?)
-                        ''', (vendor_name, vendor_code, contact_name, contact_email, 
-                              contact_phone, address, status))
-                        conn.commit()
-                        st.success(f"Vendor '{vendor_name}' added successfully!")
+                        create_vendor(vendor_name, vendor_address, vendor_phone)
+                        st.success(f"Vendor '{vendor_name}' added!")
                         st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("Vendor code already exists.")
-                    finally:
-                        conn.close()
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
                 else:
-                    st.error("Please fill in required fields.")
+                    st.error("Vendor name is required.")
     
     # Vendor list
-    conn = get_db()
-    c = conn.cursor()
-    c.execute('''
-        SELECT v.*, 
-               (SELECT COUNT(*) FROM scars WHERE vendor_id = v.id) as scar_count
-        FROM vendors v
-        ORDER BY v.name
-    ''')
-    vendors = c.fetchall()
-    conn.close()
+    vendors = get_all_vendors()
     
     st.markdown(f"### Vendors ({len(vendors)} total)")
     
     if vendors:
-        headers = ["Code", "Name", "Contact", "Email", "Phone", "Status", "SCARs"]
+        headers = ["Name", "Phone", "Address", "Contacts"]
         rows = []
         for vendor in vendors:
-            status_badge = '<span class="status-badge status-closed">ACTIVE</span>' if vendor['status'] == 'active' else '<span class="status-badge status-pending">INACTIVE</span>'
+            contacts = get_vendor_contacts(vendor['id'])
+            contact_count = len(contacts)
+            primary = next((c['name'] for c in contacts if c.get('is_primary')), '-')
             rows.append([
-                vendor['code'],
                 vendor['name'],
-                vendor['contact_name'] or '-',
-                vendor['contact_email'] or '-',
-                vendor['contact_phone'] or '-',
-                status_badge,
-                str(vendor['scar_count'])
+                vendor.get('phone') or '-',
+                (vendor.get('address') or '-')[:50],
+                f"{primary} (+{contact_count - 1})" if contact_count > 1 else primary,
             ])
         
         st.markdown(render_grid_table(headers, rows), unsafe_allow_html=True)
@@ -1312,43 +1292,72 @@ def vendors_page():
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("### Edit Vendor")
         
-        vendor_options = {f"{v['code']} - {v['name']}": v['id'] for v in vendors}
+        vendor_options = {v['name']: v['id'] for v in vendors}
         selected_vendor = st.selectbox("Select vendor to edit:", ["Select..."] + list(vendor_options.keys()))
         
         if selected_vendor != "Select...":
             vendor_id = vendor_options[selected_vendor]
-            conn = get_db()
-            c = conn.cursor()
-            c.execute("SELECT * FROM vendors WHERE id = ?", (vendor_id,))
-            vendor = c.fetchone()
-            conn.close()
+            vendor = get_vendor_by_id(vendor_id)
             
             if vendor:
                 with st.form("edit_vendor_form"):
                     col1, col2 = st.columns(2)
                     with col1:
                         edit_name = st.text_input("Vendor Name", value=vendor['name'])
-                        edit_contact = st.text_input("Contact Name", value=vendor['contact_name'] or '')
-                        edit_email = st.text_input("Contact Email", value=vendor['contact_email'] or '')
+                        edit_phone = st.text_input("Phone", value=vendor.get('phone') or '')
                     with col2:
-                        edit_phone = st.text_input("Contact Phone", value=vendor['contact_phone'] or '')
-                        edit_status = st.selectbox("Status", ["active", "inactive"],
-                                                   index=0 if vendor['status'] == 'active' else 1)
+                        edit_address = st.text_area("Address", value=vendor.get('address') or '')
                     
-                    edit_address = st.text_area("Address", value=vendor['address'] or '')
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        if st.form_submit_button("Update Vendor", use_container_width=True):
+                            update_vendor(vendor_id, name=edit_name, phone=edit_phone, address=edit_address)
+                            st.success("Vendor updated!")
+                            st.rerun()
+                    with col2:
+                        if st.form_submit_button("🗑️ Delete Vendor", type="secondary"):
+                            delete_vendor(vendor_id)
+                            st.success("Vendor deleted!")
+                            st.rerun()
+                
+                # Contacts management
+                st.markdown("#### Contacts")
+                contacts = get_vendor_contacts(vendor_id)
+                
+                if contacts:
+                    for c in contacts:
+                        col1, col2, col3, col4 = st.columns([3, 2, 2, 1])
+                        with col1:
+                            primary_badge = " ⭐" if c.get('is_primary') else ""
+                            st.markdown(f"**{c['name']}**{primary_badge}")
+                        with col2:
+                            st.caption(c['email'])
+                        with col3:
+                            st.caption(c.get('phone') or '-')
+                        with col4:
+                            if st.button("🗑️", key=f"del_contact_{c['id']}"):
+                                delete_vendor_contact(c['id'])
+                                st.rerun()
+                
+                with st.form(f"add_contact_{vendor_id}"):
+                    st.markdown("**Add Contact**")
+                    col1, col2, col3, col4 = st.columns([2, 2, 2, 1])
+                    with col1:
+                        contact_name = st.text_input("Name *")
+                    with col2:
+                        contact_email = st.text_input("Email *")
+                    with col3:
+                        contact_phone = st.text_input("Phone")
+                    with col4:
+                        contact_primary = st.checkbox("Primary")
                     
-                    if st.form_submit_button("Update Vendor", use_container_width=True):
-                        conn = get_db()
-                        c = conn.cursor()
-                        c.execute('''
-                            UPDATE vendors SET name=?, contact_name=?, contact_email=?,
-                                              contact_phone=?, address=?, status=?
-                            WHERE id=?
-                        ''', (edit_name, edit_contact, edit_email, edit_phone, edit_address, edit_status, vendor_id))
-                        conn.commit()
-                        conn.close()
-                        st.success("Vendor updated!")
-                        st.rerun()
+                    if st.form_submit_button("Add Contact"):
+                        if contact_name and contact_email:
+                            create_vendor_contact(vendor_id, contact_name, contact_email, contact_phone, contact_primary)
+                            st.success("Contact added!")
+                            st.rerun()
+                        else:
+                            st.error("Name and email are required.")
     else:
         st.info("No vendors found. Add a vendor to get started.")
 
@@ -1362,77 +1371,59 @@ def users_page():
     st.markdown("# User Management")
     st.markdown("---")
     
-    conn = get_db()
-    c = conn.cursor()
-    
     # Pending approvals alert
-    c.execute("SELECT COUNT(*) FROM users WHERE status = 'pending'")
-    pending_count = c.fetchone()[0]
-    
+    pending_count = get_pending_users_count()
     if pending_count > 0:
         st.warning(f"⚠️ {pending_count} user(s) pending approval")
     
     # Create new user
     with st.expander("➕ Add New User", expanded=False):
-        c.execute("SELECT id, name, code FROM vendors WHERE status = 'active' ORDER BY name")
-        vendors = c.fetchall()
+        vendors = get_all_vendors()
         
         with st.form("new_user_form"):
             col1, col2 = st.columns(2)
             with col1:
-                new_username = st.text_input("Username *")
+                new_name = st.text_input("Full Name *")
+                new_email = st.text_input("Email *")
                 new_password = st.text_input("Password *", type="password")
             with col2:
                 new_role = st.selectbox("Role", ["supplier", "admin"])
                 if new_role == "supplier" and vendors:
                     vendor_options = {"None": None}
-                    vendor_options.update({f"{v['code']} - {v['name']}": v['id'] for v in vendors})
+                    vendor_options.update({v['name']: v['id'] for v in vendors})
                     new_vendor = st.selectbox("Assign to Vendor", options=list(vendor_options.keys()))
                 else:
                     new_vendor = None
             
-            new_status = st.selectbox("Status", ["approved", "pending"])
-            
             if st.form_submit_button("Create User", use_container_width=True):
-                if new_username and new_password:
+                if new_name and new_email and new_password:
                     try:
                         vendor_id = vendor_options.get(new_vendor) if new_vendor else None
-                        c.execute('''
-                            INSERT INTO users (username, password_hash, role, vendor_id, status)
-                            VALUES (?, ?, ?, ?, ?)
-                        ''', (new_username, hash_password(new_password), new_role, vendor_id, new_status))
-                        conn.commit()
-                        st.success(f"User '{new_username}' created!")
+                        create_user(new_email, new_password, new_name, new_role, vendor_id)
+                        st.success(f"User '{new_name}' created!")
                         st.rerun()
-                    except sqlite3.IntegrityError:
-                        st.error("Username already exists.")
+                    except Exception as e:
+                        st.error(f"Error: {str(e)}")
                 else:
-                    st.error("Please fill in required fields.")
+                    st.error("Please fill in all required fields.")
     
     # User list
-    c.execute('''
-        SELECT u.*, v.name as vendor_name, v.code as vendor_code
-        FROM users u
-        LEFT JOIN vendors v ON u.vendor_id = v.id
-        ORDER BY u.created_at DESC
-    ''')
-    users = c.fetchall()
-    conn.close()
+    users = get_all_users()
     
     st.markdown(f"### Users ({len(users)} total)")
     
     if users:
-        headers = ["Username", "Role", "Vendor", "Status", "Created"]
+        headers = ["Name", "Email", "Role", "Vendor", "Status", "Created"]
         rows = []
-        for user in users:
-            vendor_info = f"{user['vendor_code']} - {user['vendor_name']}" if user['vendor_name'] else '-'
-            status_badge = get_status_badge('approved' if user['status'] == 'approved' else 'pending')
+        for u in users:
+            status_badge = get_status_badge(u['status'])
             rows.append([
-                user['username'],
-                get_role_badge(user['role']),
-                vendor_info,
+                u['name'],
+                u['email'],
+                get_role_badge(u['role']),
+                u.get('vendor_name') or '-',
                 status_badge,
-                user['created_at'][:10] if user['created_at'] else '-'
+                format_date(u.get('created_at')),
             ])
         
         st.markdown(render_grid_table(headers, rows), unsafe_allow_html=True)
@@ -1441,45 +1432,42 @@ def users_page():
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("### User Actions")
         
-        user_options = {u['username']: u['id'] for u in users if u['username'] != 'admin'}
+        # Don't allow editing yourself
+        user_options = {f"{u['name']} ({u['email']})": u['id'] for u in users if u['id'] != st.session_state.user['id']}
         selected_user = st.selectbox("Select user:", ["Select..."] + list(user_options.keys()))
         
         if selected_user != "Select...":
             user_id = user_options[selected_user]
+            target_user = get_user_by_id(user_id)
             
-            conn = get_db()
-            c = conn.cursor()
-            c.execute("SELECT * FROM users WHERE id = ?", (user_id,))
-            user = c.fetchone()
-            
-            col1, col2, col3 = st.columns(3)
-            
-            with col1:
-                if user['status'] == 'pending':
-                    if st.button("✓ Approve User", use_container_width=True):
-                        c.execute("UPDATE users SET status = 'approved' WHERE id = ?", (user_id,))
-                        conn.commit()
-                        st.success("User approved!")
+            if target_user:
+                col1, col2, col3 = st.columns(3)
+                
+                with col1:
+                    if target_user['status'] == 'pending':
+                        if st.button("✓ Approve User", use_container_width=True):
+                            update_user(user_id, status='approved')
+                            st.success("User approved!")
+                            st.rerun()
+                    elif target_user['status'] == 'rejected':
+                        if st.button("✓ Re-approve User", use_container_width=True):
+                            update_user(user_id, status='approved')
+                            st.success("User approved!")
+                            st.rerun()
+                    else:
+                        st.info("User is already approved")
+                
+                with col2:
+                    if st.button("🔑 Reset Password", use_container_width=True):
+                        new_pw = "password123"
+                        update_user_password(user_id, new_pw)
+                        st.success(f"Password reset to: {new_pw}")
+                
+                with col3:
+                    if st.button("🗑️ Delete User", use_container_width=True, type="secondary"):
+                        delete_user(user_id)
+                        st.success("User deleted!")
                         st.rerun()
-                else:
-                    st.info("User is already approved")
-            
-            with col2:
-                if st.button("🔑 Reset Password", use_container_width=True):
-                    new_pw = "password123"
-                    c.execute("UPDATE users SET password_hash = ? WHERE id = ?", 
-                             (hash_password(new_pw), user_id))
-                    conn.commit()
-                    st.success(f"Password reset to: {new_pw}")
-            
-            with col3:
-                if st.button("🗑️ Delete User", use_container_width=True, type="secondary"):
-                    c.execute("DELETE FROM users WHERE id = ?", (user_id,))
-                    conn.commit()
-                    st.success("User deleted!")
-                    st.rerun()
-            
-            conn.close()
     else:
         st.info("No users found.")
 
@@ -1498,8 +1486,13 @@ def main():
     # Apply Calyx brand styles
     st.markdown(get_calyx_styles(), unsafe_allow_html=True)
     
-    # Initialize database
-    init_db()
+    # Verify Supabase connection
+    try:
+        init_database()
+    except Exception as e:
+        st.error(f"⚠️ Database connection failed: {e}")
+        st.info("Please check your SUPABASE_URL and SUPABASE_KEY in Settings → Secrets.")
+        st.stop()
     
     # Initialize session state
     if 'user' not in st.session_state:
