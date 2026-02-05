@@ -364,6 +364,16 @@ def update_scar(scar_id: str, data: dict, user_id: str = None) -> dict:
     if not updates:
         return get_scar_by_id(scar_id)
 
+    # Sanitize DATE columns — PostgreSQL rejects empty strings for DATE fields
+    date_fields = {
+        "date_issued", "response_due_date", "containment_date",
+        "root_cause_date", "correction_date", "prevention_date",
+        "verification_date",
+    }
+    for field in date_fields:
+        if field in updates and not updates[field]:
+            updates[field] = None
+
     sb = get_supabase()
     sb.table("scars").update(updates).eq("id", scar_id).execute()
 
