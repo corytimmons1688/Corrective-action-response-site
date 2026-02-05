@@ -14,32 +14,42 @@ from supabase import create_client, Client
 
 # Try Streamlit secrets first, then fall back to environment variables
 def _get_config(key: str) -> str:
-    """Get config value from Streamlit secrets or environment variables"""
+    """Get config value from Streamlit secrets or environment variables.
+    Supports both flat and nested TOML formats:
+        SUPABASE_URL = "..."          (flat / top-level)
+        [supabase]
+        SUPABASE_URL = "..."          (nested under [supabase])
+    """
     try:
         import streamlit as st
-        if hasattr(st, "secrets") and key in st.secrets:
-            return st.secrets[key]
+        if hasattr(st, "secrets"):
+            # 1. Check top-level keys first
+            if key in st.secrets:
+                return st.secrets[key]
+            # 2. Check nested under [supabase] section
+            if "supabase" in st.secrets and key in st.secrets["supabase"]:
+                return st.secrets["supabase"][key]
     except Exception:
         pass
     return os.environ.get(key, "")
 
 
-SUPABASE_URL = _get_config("SUPABASE_URL")
-SUPABASE_KEY = _get_config("SUPABASE_KEY")  # Use the service_role key
-
 _supabase_client: Client | None = None
 
 
 def get_supabase() -> Client:
-    """Get or create Supabase client singleton"""
+    """Get or create Supabase client singleton.
+    Reads config lazily so Streamlit secrets are available at call time."""
     global _supabase_client
     if _supabase_client is None:
-        if not SUPABASE_URL or not SUPABASE_KEY:
+        url = _get_config("SUPABASE_URL")
+        key = _get_config("SUPABASE_KEY")
+        if not url or not key:
             raise ValueError(
                 "SUPABASE_URL and SUPABASE_KEY environment variables must be set. "
                 "Add them to your Streamlit secrets or .env file."
             )
-        _supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        _supabase_client = create_client(url, key)
     return _supabase_client
 
 
