@@ -676,9 +676,9 @@ def create_scar_form():
         with col1:
             vendor_options = {v['name']: v['id'] for v in vendors}
             selected_vendor = st.selectbox("Vendor *", options=list(vendor_options.keys()))
-            date_issued = st.date_input("Date Issued *", value=datetime.now().date(), format="MM/DD/YY")
+            date_issued = st.date_input("Date Issued *", value=datetime.now().date())
             response_due_date = st.date_input("Response Due Date *",
-                value=(datetime.now() + timedelta(days=14)).date(), format="MM/DD/YY")
+                value=(datetime.now() + timedelta(days=14)).date())
             ncr_number = st.text_input("NCR #", placeholder="e.g., NCR-2026-0001")
 
         with col2:
@@ -829,7 +829,7 @@ def scar_detail_view(scar_id):
             with col2:
                 existing = parse_date(scar.get('containment_date'))
                 containment_date = st.date_input("Date", value=existing,
-                    format="MM/DD/YY", disabled=not can_edit)
+                    disabled=not can_edit)
             if can_edit:
                 if st.form_submit_button("💾 Save Containment", use_container_width=True):
                     update_scar(scar_id, {
@@ -855,7 +855,7 @@ def scar_detail_view(scar_id):
             with col2:
                 existing = parse_date(scar.get('root_cause_date'))
                 root_cause_date = st.date_input("Date", value=existing,
-                    format="MM/DD/YY", disabled=not can_edit)
+                    disabled=not can_edit)
             if can_edit:
                 if st.form_submit_button("💾 Save Root Cause", use_container_width=True):
                     update_scar(scar_id, {
@@ -879,7 +879,7 @@ def scar_detail_view(scar_id):
             with col2:
                 existing = parse_date(scar.get('correction_date'))
                 correction_date = st.date_input("Date", value=existing,
-                    format="MM/DD/YY", disabled=not can_edit)
+                    disabled=not can_edit)
             if can_edit:
                 if st.form_submit_button("💾 Save Corrective Action", use_container_width=True):
                     update_scar(scar_id, {
@@ -902,7 +902,7 @@ def scar_detail_view(scar_id):
             with col2:
                 existing = parse_date(scar.get('prevention_date'))
                 prevention_date = st.date_input("Date", value=existing,
-                    format="MM/DD/YY", disabled=not can_edit)
+                    disabled=not can_edit)
             if can_edit:
                 if st.form_submit_button("💾 Save Preventive Action", use_container_width=True):
                     update_scar(scar_id, {
@@ -935,7 +935,7 @@ def scar_detail_view(scar_id):
                 with col2:
                     existing = parse_date(scar.get('verification_date'))
                     verification_date = st.date_input("Date", value=existing,
-                        format="MM/DD/YY", disabled=scar['status'] == 'closed')
+                        disabled=scar['status'] == 'closed')
                 if scar['status'] != 'closed':
                     if st.form_submit_button("💾 Save Verification", use_container_width=True):
                         update_scar(scar_id, {
