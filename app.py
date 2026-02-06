@@ -120,6 +120,30 @@ def get_calyx_styles():
         [data-testid="stSidebar"] {{
             background: linear-gradient(180deg, var(--calyx-primary) 0%, var(--calyx-ocean-blue) 100%);
         }}
+        [data-testid="stSidebar"] .block-container,
+        [data-testid="stSidebar"] [data-testid="stVerticalBlockBorderWrapper"] {{
+            padding-top: 0 !important;
+        }}
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p {{
+            margin-bottom: 0.2rem;
+        }}
+        [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h3 {{
+            margin-top: 0.2rem;
+            margin-bottom: 0.3rem;
+            font-size: 0.9rem;
+        }}
+        [data-testid="stSidebar"] hr {{
+            margin-top: 0.4rem;
+            margin-bottom: 0.4rem;
+            border-color: rgba(255,255,255,0.2);
+        }}
+        [data-testid="stSidebar"] .stButton {{
+            margin-bottom: -0.4rem;
+        }}
+        [data-testid="stSidebar"] .stButton > button {{
+            padding: 0.3rem 1rem;
+            font-size: 0.85rem;
+        }}
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] {{ color: var(--calyx-white); }}
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] p,
         [data-testid="stSidebar"] [data-testid="stMarkdownContainer"] h1,
@@ -408,8 +432,8 @@ def render_sidebar():
         logo_url = get_logo_url()
         if logo_url:
             st.markdown(
-                f'<div style="text-align:center;padding:1rem 0;"><img src="{logo_url}" '
-                f'style="max-width:180px;filter:brightness(0) invert(1);" alt="Calyx Containers"></div>',
+                f'<div style="text-align:center;padding:0.5rem 0 0.2rem;"><img src="{logo_url}" '
+                f'style="max-width:130px;filter:brightness(0) invert(1);" alt="Calyx Containers"></div>',
                 unsafe_allow_html=True)
         else:
             st.markdown("## ◇ CALYX")
