@@ -41,6 +41,7 @@ from database import (
     get_scar_attachments,
     get_attachment_download_url,
     delete_attachment,
+    get_logo_url,
 )
 
 # Default passwords — if user logs in with one of these, force a change
@@ -403,8 +404,16 @@ def navigate_to_scar(scar_id):
 
 def render_sidebar():
     with st.sidebar:
-        st.markdown("## ◇ CALYX")
-        st.caption("CONTAINERS")
+        # Show logo image
+        logo_url = get_logo_url()
+        if logo_url:
+            st.markdown(
+                f'<div style="text-align:center;padding:1rem 0;"><img src="{logo_url}" '
+                f'style="max-width:180px;filter:brightness(0) invert(1);" alt="Calyx Containers"></div>',
+                unsafe_allow_html=True)
+        else:
+            st.markdown("## ◇ CALYX")
+            st.caption("CONTAINERS")
         st.divider()
 
         if check_login():
@@ -462,11 +471,18 @@ def render_sidebar():
 # ============================================================================
 
 def login_page():
-    st.markdown("# SCAR Management System")
-    st.markdown("---")
-
     col1, col2, col3 = st.columns([1, 2, 1])
     with col2:
+        # Show logo on login page
+        logo_url = get_logo_url()
+        if logo_url:
+            st.markdown(
+                f'<div style="text-align:center;padding:1rem 0 0.5rem;"><img src="{logo_url}" '
+                f'style="max-width:280px;" alt="Calyx Containers"></div>',
+                unsafe_allow_html=True)
+        else:
+            st.markdown("# SCAR Management System")
+        st.markdown("---")
         st.subheader("Sign In")
         with st.form("login_form"):
             email = st.text_input("Email")
