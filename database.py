@@ -496,6 +496,21 @@ def get_scar_stats(vendor_id: str = None) -> dict:
 
 STORAGE_BUCKET = "scar-attachments"
 
+LOGO_FILE = "Calyx Containers Primary Logo-01_Black (1).png"
+
+
+def get_logo_url(expires_in: int = 86400) -> str:
+    """Get a signed URL for the Calyx logo from Supabase storage.
+    Tries the scar-attachments bucket first. Returns empty string on failure."""
+    sb = get_supabase()
+    try:
+        result = sb.storage.from_(STORAGE_BUCKET).create_signed_url(LOGO_FILE, expires_in)
+        if isinstance(result, dict) and result.get("signedURL"):
+            return result["signedURL"]
+    except Exception:
+        pass
+    return ""
+
 
 def upload_attachment(
     scar_id: str,
