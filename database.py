@@ -114,7 +114,7 @@ def get_user_by_id(user_id: str) -> dict | None:
 
 
 def create_user(email: str, password: str, name: str, role: str, vendor_id: str = None) -> dict:
-    """Create a new user"""
+    """Create a new user. If assigned to a vendor, also add as vendor contact."""
     sb = get_supabase()
     status = "approved" if role == "admin" else "pending"
 
@@ -128,6 +128,20 @@ def create_user(email: str, password: str, name: str, role: str, vendor_id: str 
     }
 
     result = sb.table("users").insert(data).execute()
+
+    # Auto-add as vendor contact if assigned to a vendor
+    if vendor_id:
+        # Check if contact with this email already exists for this vendor
+        existing = (
+            sb.table("vendor_contacts")
+            .select("id")
+            .eq("vendor_id", vendor_id)
+            .eq("email", email)
+            .execute()
+        )
+        if not existing.data:
+            create_vendor_contact(vendor_id, name, email)
+
     return get_user_by_id(result.data[0]["id"])
 
 
@@ -148,7 +162,7 @@ def get_all_users() -> list:
 
 
 def update_user(user_id: str, **kwargs) -> dict:
-    """Update user fields"""
+    """Update user fields. If vendor_id changes, also add as vendor contact."""
     allowed_fields = ["name", "email", "role", "vendor_id", "status"]
     updates = {k: v for k, v in kwargs.items() if k in allowed_fields}
 
@@ -157,6 +171,21 @@ def update_user(user_id: str, **kwargs) -> dict:
 
     sb = get_supabase()
     sb.table("users").update(updates).eq("id", user_id).execute()
+
+    # If vendor_id was set, ensure user is a vendor contact
+    new_vendor_id = updates.get("vendor_id")
+    if new_vendor_id:
+        user = get_user_by_id(user_id)
+        existing = (
+            sb.table("vendor_contacts")
+            .select("id")
+            .eq("vendor_id", new_vendor_id)
+            .eq("email", user["email"])
+            .execute()
+        )
+        if not existing.data:
+            create_vendor_contact(new_vendor_id, user["name"], user["email"])
+
     return get_user_by_id(user_id)
 
 
