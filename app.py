@@ -785,7 +785,7 @@ def scar_detail_view(scar_id):
     user = st.session_state.user
     is_admin = user['role'] == 'admin'
     can_edit = scar['status'] in ['new', 'open']
-    can_submit = user['role'] == 'supplier' and scar['status'] == 'open'
+    can_submit = scar['status'] == 'open'
     can_verify = is_admin and scar['status'] == 'submitted'
 
     # Header
