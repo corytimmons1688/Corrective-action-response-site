@@ -494,8 +494,7 @@ def login_page():
                     st.warning("Please enter email and password")
 
         st.divider()
-        st.caption("Demo Credentials")
-        st.info("**Admin:** admin@calyxcontainers.com / admin123\n\n**Supplier:** jsmith@pacificglass.com / supplier123")
+        st.caption("Contact your administrator if you need an account.")
 
 # ============================================================================
 # CHANGE PASSWORD PAGE
