@@ -135,8 +135,9 @@ def get_calyx_styles():
         }}
         [data-testid="stSidebar"] hr {{ border-color: rgba(255,255,255,0.2); }}
 
-        /* Buttons */
-        .stButton > button {{
+        /* Buttons - primary filled */
+        .stButton > button[kind="primary"],
+        .stButton > button[data-testid="baseButton-primary"] {{
             background-color: var(--calyx-primary);
             color: var(--calyx-white) !important;
             border: none;
@@ -147,9 +148,27 @@ def get_calyx_styles():
             letter-spacing: 0.02em;
             transition: background-color 0.2s ease;
         }}
-        .stButton > button:hover {{
+        .stButton > button[kind="primary"]:hover,
+        .stButton > button[data-testid="baseButton-primary"]:hover {{
             background-color: var(--calyx-primary-light);
             color: var(--calyx-white) !important;
+        }}
+
+        /* Buttons - default/secondary in main area */
+        .stButton > button {{
+            border-radius: 4px;
+            padding: 0.5rem 1.5rem;
+            font-family: 'DM Sans', sans-serif;
+            font-weight: 500;
+            letter-spacing: 0.02em;
+            transition: background-color 0.2s ease;
+            color: var(--calyx-primary) !important;
+            border: 1px solid var(--calyx-primary);
+            background-color: var(--calyx-white);
+        }}
+        .stButton > button:hover {{
+            background-color: var(--calyx-powder-blue);
+            color: var(--calyx-primary) !important;
         }}
         [data-testid="stSidebar"] .stButton > button {{
             background-color: var(--calyx-white);
@@ -567,7 +586,7 @@ def dashboard_page():
             severity = (scar.get('severity') or '-').upper()
             due = format_date(scar.get('response_due_date'))
 
-            label = f"📋 {scar_num}  —  {vendor}  |  {product}  |  {status}  |  {severity}  |  Due: {due}"
+            label = f"{scar_num}  |  {vendor}  |  {product}  |  {status}  |  Due: {due}"
             if st.button(label, key=f"dash_scar_{scar['id']}", use_container_width=True):
                 navigate_to_scar(scar['id'])
                 st.rerun()
@@ -593,7 +612,7 @@ def scars_page():
     # If a specific SCAR was selected, show its detail view
     selected_id = st.session_state.get('selected_scar_id')
     if selected_id:
-        if st.button("← Back to SCAR list"):
+        if st.button("Back to SCAR list"):
             st.session_state.selected_scar_id = None
             st.rerun()
         scar_detail_view(selected_id)
