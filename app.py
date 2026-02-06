@@ -850,20 +850,22 @@ def scar_detail_view(scar_id):
                 value=scar.get('root_cause_evidence') or '', height=100, disabled=not can_edit)
             col1, col2 = st.columns(2)
             with col1:
-                root_cause_approved_by = st.text_input("RCA Approved By",
-                    value=scar.get('root_cause_approved_by') or '', disabled=not can_edit)
+                root_cause_approved_by = st.text_input("RCA Approved By (Admin)",
+                    value=scar.get('root_cause_approved_by') or '', disabled=not is_admin or not can_edit)
             with col2:
                 existing = parse_date(scar.get('root_cause_date'))
-                root_cause_date = st.date_input("Date", value=existing,
-                    disabled=not can_edit)
+                root_cause_date = st.date_input("Approved Date (Admin)", value=existing,
+                    disabled=not is_admin or not can_edit)
             if can_edit:
                 if st.form_submit_button("💾 Save Root Cause", use_container_width=True):
-                    update_scar(scar_id, {
+                    updates = {
                         'root_cause': root_cause,
                         'root_cause_evidence': root_cause_evidence,
-                        'root_cause_approved_by': root_cause_approved_by,
-                        'root_cause_date': root_cause_date.isoformat() if root_cause_date else None,
-                    }, user['id'])
+                    }
+                    if is_admin:
+                        updates['root_cause_approved_by'] = root_cause_approved_by
+                        updates['root_cause_date'] = root_cause_date.isoformat() if root_cause_date else None
+                    update_scar(scar_id, updates, user['id'])
                     st.success("Root Cause section saved!")
                     st.rerun()
 
@@ -874,19 +876,19 @@ def scar_detail_view(scar_id):
                 value=scar.get('corrective_action') or '', height=150, disabled=not can_edit)
             col1, col2 = st.columns(2)
             with col1:
-                correction_approved_by = st.text_input("CA Approved By",
-                    value=scar.get('correction_approved_by') or '', disabled=not can_edit)
+                correction_approved_by = st.text_input("CA Approved By (Admin)",
+                    value=scar.get('correction_approved_by') or '', disabled=not is_admin or not can_edit)
             with col2:
                 existing = parse_date(scar.get('correction_date'))
-                correction_date = st.date_input("Date", value=existing,
-                    disabled=not can_edit)
+                correction_date = st.date_input("Approved Date (Admin)", value=existing,
+                    disabled=not is_admin or not can_edit)
             if can_edit:
                 if st.form_submit_button("💾 Save Corrective Action", use_container_width=True):
-                    update_scar(scar_id, {
-                        'corrective_action': corrective_action,
-                        'correction_approved_by': correction_approved_by,
-                        'correction_date': correction_date.isoformat() if correction_date else None,
-                    }, user['id'])
+                    updates = {'corrective_action': corrective_action}
+                    if is_admin:
+                        updates['correction_approved_by'] = correction_approved_by
+                        updates['correction_date'] = correction_date.isoformat() if correction_date else None
+                    update_scar(scar_id, updates, user['id'])
                     st.success("Corrective Action section saved!")
                     st.rerun()
 
@@ -897,19 +899,19 @@ def scar_detail_view(scar_id):
                 value=scar.get('preventive_action') or '', height=150, disabled=not can_edit)
             col1, col2 = st.columns(2)
             with col1:
-                prevention_approved_by = st.text_input("PA Approved By",
-                    value=scar.get('prevention_approved_by') or '', disabled=not can_edit)
+                prevention_approved_by = st.text_input("PA Approved By (Admin)",
+                    value=scar.get('prevention_approved_by') or '', disabled=not is_admin or not can_edit)
             with col2:
                 existing = parse_date(scar.get('prevention_date'))
-                prevention_date = st.date_input("Date", value=existing,
-                    disabled=not can_edit)
+                prevention_date = st.date_input("Approved Date (Admin)", value=existing,
+                    disabled=not is_admin or not can_edit)
             if can_edit:
                 if st.form_submit_button("💾 Save Preventive Action", use_container_width=True):
-                    update_scar(scar_id, {
-                        'preventive_action': preventive_action,
-                        'prevention_approved_by': prevention_approved_by,
-                        'prevention_date': prevention_date.isoformat() if prevention_date else None,
-                    }, user['id'])
+                    updates = {'preventive_action': preventive_action}
+                    if is_admin:
+                        updates['prevention_approved_by'] = prevention_approved_by
+                        updates['prevention_date'] = prevention_date.isoformat() if prevention_date else None
+                    update_scar(scar_id, updates, user['id'])
                     st.success("Preventive Action section saved!")
                     st.rerun()
 
@@ -1029,28 +1031,24 @@ def scar_detail_view(scar_id):
     col1, col2, col3 = st.columns(3)
 
     if can_submit:
-        with col1:
-            if st.button("📤 Submit Response", type="primary", use_container_width=True):
-                # Validate all required sections are filled
-                missing = []
-                if not scar.get('containment_isolate'): missing.append("Containment (Isolate)")
-                if not scar.get('containment_screen_sort'): missing.append("Containment (Screen & Sort)")
-                if not scar.get('containment_prepared_by'): missing.append("Containment (Prepared By)")
-                if not scar.get('containment_date'): missing.append("Containment (Date)")
-                if not scar.get('root_cause'): missing.append("Root Cause")
-                if not scar.get('root_cause_evidence'): missing.append("Root Cause Evidence")
-                if not scar.get('root_cause_approved_by'): missing.append("Root Cause (Approved By)")
-                if not scar.get('root_cause_date'): missing.append("Root Cause (Date)")
-                if not scar.get('corrective_action'): missing.append("Corrective Action")
-                if not scar.get('correction_approved_by'): missing.append("Corrective Action (Approved By)")
-                if not scar.get('correction_date'): missing.append("Corrective Action (Date)")
-                if not scar.get('preventive_action'): missing.append("Preventive Action")
-                if not scar.get('prevention_approved_by'): missing.append("Preventive Action (Approved By)")
-                if not scar.get('prevention_date'): missing.append("Preventive Action (Date)")
+        # Only supplier-fillable content fields are required — not admin approvals,
+        # dates, attachments, or verification
+        missing = []
+        if not scar.get('containment_isolate'): missing.append("Containment (Isolate)")
+        if not scar.get('containment_screen_sort'): missing.append("Containment (Screen & Sort)")
+        if not scar.get('root_cause'): missing.append("Root Cause")
+        if not scar.get('root_cause_evidence'): missing.append("Root Cause Evidence")
+        if not scar.get('corrective_action'): missing.append("Corrective Action")
+        if not scar.get('preventive_action'): missing.append("Preventive Action")
 
-                if missing:
-                    st.error(f"Complete these fields before submitting: {', '.join(missing)}")
-                else:
+        is_complete = len(missing) == 0
+
+        with col1:
+            if not is_complete:
+                st.button("📤 Submit Response", type="primary", use_container_width=True, disabled=True)
+                st.caption(f"⚠️ Complete before submitting: {', '.join(missing)}")
+            else:
+                if st.button("📤 Submit Response", type="primary", use_container_width=True):
                     submit_scar(scar_id, user['id'])
                     st.success("✅ Response submitted!")
                     st.rerun()
